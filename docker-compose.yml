@@ -1,0 +1,26 @@
+services:
+  mongo:
+    image: mongo:7.0-rc-jammy
+    restart: always
+    env_file:
+      - .env
+    volumes:
+      - mongo_db:/data/db
+    ports:
+      - "27017:27017"
+
+  minesweeper:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: minesweeper-app
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    restart: always
+    depends_on:
+      - mongo
+
+volumes:
+  mongo_db:
