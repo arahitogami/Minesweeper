@@ -104,11 +104,11 @@ class GameTurn(NewGameParams):
                     self._open_cells(x + dx, y + dy)
 
     def user_opens_cells(self, row: int, col: int) -> 'GameTurn':
-        if self.width < row or row < 0:
+        if self.width <= row or row < 0:
             raise MinesWeeperHTTPException(
                 error=Met.error_row.format(w=self.width)
             )
-        if self.height < col or col < 0:
+        if self.height <= col or col < 0:
             raise MinesWeeperHTTPException(
                 error=Met.error_col.format(h=self.height)
             )

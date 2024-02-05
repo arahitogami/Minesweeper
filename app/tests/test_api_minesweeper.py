@@ -231,7 +231,7 @@ class TestTurnGame:
         )
 
         # Неверная ячейка
-        for i in [-1, 11]:
+        for i in [-1, 10]:
             response_2: Response = await ac.post(
                 "/api/turn",
                 json={
