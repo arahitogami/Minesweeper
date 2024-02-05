@@ -51,7 +51,7 @@
 
 1. Скопируйте репозиторий
    ```bash
-   git clone https://github.com/arahitogami/minesweeper.git
+   git clone https://github.com/arahitogami/Minesweeper.git
    ```
 2. В корневой директории проекта выполнить команду
    ```
