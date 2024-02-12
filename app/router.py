@@ -6,7 +6,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from pymongo import ReturnDocument
 
 from app.database import get_db
-from app.schemas import NewGameParams, GameTurn, TurnParams
+from app.schemas import NewGameParams, GameService, TurnParams
 from app.utils import MinesWeeperHTTPException, MinesErrorText as Met
 
 
@@ -18,28 +18,19 @@ router_minesweeper = APIRouter(
 
 @router_minesweeper.post(
     "/new",
-    response_model=GameTurn,
+    response_model=GameService,
     response_model_exclude={'data_field'}
 )
 async def new_game(
         params: NewGameParams,
-        db: Annotated[AsyncIOMotorDatabase, Depends(get_db)]
 ):
-    game_id = str(uuid.uuid4())
-    document = {
-        'game_id': game_id,
-        **params.model_dump()
-    }
-    result = await db.mongodb["games"].insert_one(document)
-    if not result:
-        raise MinesWeeperHTTPException(error="Игра не создана")
 
-    return GameTurn(game_id=game_id, **params.model_dump())
+    return await GameService(**params.model_dump()).create_new_game()
 
 
 @router_minesweeper.post(
     "/turn",
-    response_model=GameTurn,
+    response_model=GameService,
     response_model_exclude={'data_field'}
 )
 async def make_move(
@@ -54,14 +45,11 @@ async def make_move(
         raise MinesWeeperHTTPException(
             error=Met.error_game_id.format(game_id=params.game_id)
         )
-    Met.error_game_id.format(
-        game_id=params.game_id
-    )
 
     if game.get('completed'):
         raise MinesWeeperHTTPException(error=Met.error_completed)
 
-    game_turn = GameTurn(**game).user_opens_cells(params.row, params.col)
+    game_turn = GameService(**game).user_opens_cells(params.row, params.col)
 
     # Если игра завершилась, то стираем данные о полях из базы
     if game_turn.completed:

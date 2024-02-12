@@ -2,8 +2,9 @@ import random
 import uuid
 from typing import List
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, model_validator, Field
 
+from app.database import get_db
 from app.utils import MinesWeeperHTTPException, MinesErrorText as Met
 
 
@@ -12,8 +13,36 @@ class NewGameParams(BaseModel):
     height: int
     mines_count: int
 
+
+class TurnParams(BaseModel):
+    game_id:  str
+    row: int
+    col: int
+
     @model_validator(mode="after")
-    def check_width_height_mines(self) -> 'NewGameParams':
+    def check_formate_game_id(self) -> 'TurnParams':
+        try:
+            uuid.UUID(self.game_id, version=4)
+        except ValueError as exc:
+            raise MinesWeeperHTTPException(
+                error=Met.error_form_game_id
+            ) from exc
+        return self
+
+
+class GameService(BaseModel):
+    game_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    completed: bool = False
+
+    width: int
+    height: int
+    mines_count: int
+
+    field: List[List[str]] | None = None
+    data_field: List[List[str]] | None = None
+
+    @model_validator(mode="after")
+    def __check_width_height_mines(self) -> 'GameService':
         if not 1 < self.width < 31:
             raise MinesWeeperHTTPException(
                 error=Met.error_width
@@ -30,16 +59,8 @@ class NewGameParams(BaseModel):
 
         return self
 
-
-class GameTurn(NewGameParams):
-    game_id: str
-    completed: bool = False
-
-    field: List[List[str]] | None = None
-    data_field: List[List[str]] | None = None
-
     @model_validator(mode="after")
-    def check_field(self) -> 'GameTurn':
+    def __check_field(self) -> 'GameService':
         """
         Создаем поле для игрока с закрытыми ячейками, если поле не передано.
         :return:
@@ -49,6 +70,15 @@ class GameTurn(NewGameParams):
                 [' ' for _ in range(self.height)] for _ in range(self.width)
             ]
 
+        return self
+
+    async def create_new_game(self):
+        db = await get_db()
+        result = await db.mongodb["games"].insert_one(
+            self.model_dump(exclude={'data_field'})
+        )
+        if not result:
+            raise MinesWeeperHTTPException(error="Игра не создана")
         return self
 
     def _create_data_field(self, first_x: int, first_y: int):
@@ -63,15 +93,17 @@ class GameTurn(NewGameParams):
         self.data_field = [
             ['0' for _ in range(self.height)] for _ in range(self.width)
         ]
-        mines = set()
+        free_cells = [
+            (x, y) for y in range(self.height) for x in range(self.width)
+            if (x, y) != (first_x, first_y)
+        ]
 
-        while len(mines) < self.mines_count:
-            x, y = random.randint(0, self.width - 1), random.randint(0, self.height - 1)
+        # Ставим мины в случайном порядке
+        for i in range(self.mines_count):
+            x, y = free_cells.pop(random.randint(0, len(free_cells) - 1))
+            self.data_field[x][y] = ' '
 
-            if (x, y) not in mines and (x, y) != (first_x, first_y):
-                mines.add((x, y))
-                self.data_field[x][y] = ' '
-
+        # Ставим цифры о минах
         for y in range(self.height):
             for x in range(self.width):
                 if self.data_field[x][y] == ' ':
@@ -86,24 +118,28 @@ class GameTurn(NewGameParams):
                 self.data_field[x][y] = str(counter)
 
     def _open_cells(self, x, y):
-        # Проверка, что ячейка находится внутри поля и еще не была открыта
-        if (
-                self.width <= x or x < 0 or
-                self.height <= y or y < 0 or
-                self.field[x][y] != ' '
-        ):
-            return
+        cells_to_check = [(x, y)]
 
-        # Открываем ячейку
-        self.field[x][y] = str(self.data_field[x][y])
+        while cells_to_check:
+            x, y = cells_to_check.pop()
+            # Проверка, что ячейка находится внутри поля и еще не была открыта
+            if (
+                    self.width <= x or x < 0 or
+                    self.height <= y or y < 0 or
+                    self.field[x][y] != ' '
+            ):
+                continue
 
-        # Если ячейка равна 0, откроем все соседние ячейки
-        if self.data_field[x][y] == '0':
-            for dx in [-1, 0, 1]:
-                for dy in [-1, 0, 1]:
-                    self._open_cells(x + dx, y + dy)
+            # Открываем ячейку
+            self.field[x][y] = str(self.data_field[x][y])
 
-    def user_opens_cells(self, row: int, col: int) -> 'GameTurn':
+            # Если ячейка равна 0, откроем все соседние ячейки
+            if self.data_field[x][y] == '0':
+                for dx in [-1, 0, 1]:
+                    for dy in [-1, 0, 1]:
+                        cells_to_check.append((x + dx, y + dy))
+
+    def user_opens_cells(self, row: int, col: int) -> 'GameService':
         if self.width <= row or row < 0:
             raise MinesWeeperHTTPException(
                 error=Met.error_row.format(w=self.width)
@@ -148,17 +184,4 @@ class GameTurn(NewGameParams):
         return self
 
 
-class TurnParams(BaseModel):
-    game_id:  str
-    row: int
-    col: int
 
-    @model_validator(mode="after")
-    def check_formate_game_id(self) -> 'TurnParams':
-        try:
-            uuid.UUID(self.game_id, version=4)
-        except ValueError as exc:
-            raise MinesWeeperHTTPException(
-                error=Met.error_form_game_id
-            ) from exc
-        return self
