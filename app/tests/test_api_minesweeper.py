@@ -3,6 +3,7 @@ import uuid
 from httpx import AsyncClient, Response
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
+from app.schemas import MAX_HEIGHT, MAX_WIDTH
 from app.utils import MinesErrorText as Met
 
 
@@ -34,33 +35,33 @@ class TestNewGame:
             "/api/new",
             json={
                 "width": 2,
-                "height": 30,
+                "height": MAX_HEIGHT,
                 "mines_count": 1
             }
         )
-        assert response_1.status_code == 200, "w=2, h=30, m_c=1"
+        assert response_1.status_code == 200, f"w=2, h={MAX_HEIGHT}, m_c=1"
 
         response_2: Response = await ac.post(
             "/api/new",
             json={
-                "width": 30,
+                "width": MAX_WIDTH,
                 "height": 2,
-                "mines_count": 59
+                "mines_count": MAX_WIDTH*2-1
             }
         )
-        assert response_2.status_code == 200, "w=30, h=2, m_c=59"
+        assert response_2.status_code == 200, f"w={MAX_WIDTH}, h=2, m_c=59"
         field = response_2.json()['field']
-        assert len(field) == 30
+        assert len(field) == MAX_WIDTH
         for y in field:
             assert len(y) == 2
 
     async def test_new_bad_params_game(self, ac: AsyncClient):
         # Проверка на недопустимую ширину и высоту
-        for i in [1, 31, 0, -5]:
+        for i in [1, 'max', 0, -5]:
             response_1: Response = await ac.post(
                 "/api/new",
                 json={
-                    "width": i,
+                    "width": i if i != 'max' else MAX_WIDTH+1,
                     "height": 10,
                     "mines_count": 10
                 }
@@ -72,7 +73,7 @@ class TestNewGame:
                 "/api/new",
                 json={
                     "width": 10,
-                    "height": i,
+                    "height": i if i != 'max' else MAX_HEIGHT+1,
                     "mines_count": 10
                 }
             )
@@ -80,7 +81,9 @@ class TestNewGame:
             assert response_2.json()['error'] == Met.error_height
 
         # Проверка на плохое количество мин
-        for w, h, m_c in ((2, 2, 4), (30, 30, 900), (10, 10, -5)):
+        for w, h, m_c in ((2, 2, 4), (
+                MAX_WIDTH, MAX_HEIGHT, MAX_WIDTH*MAX_HEIGHT
+        ), (10, 10, -5)):
             response_3: Response = await ac.post(
                 "/api/new",
                 json={
